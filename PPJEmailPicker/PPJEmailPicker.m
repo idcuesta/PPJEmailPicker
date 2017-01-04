@@ -130,6 +130,7 @@
 	self.pickerTextColor                      = [UIColor foregroundDefaultColor];
 	self.pickerSelectedTextColor              = [UIColor backgroudDefaultColor];
 	self.pickerSelectedBackgroundColor        = [UIColor foregroundDefaultColor];
+  self.allowTypedEntries                    = YES;
 	[self registerNotifications];
 }
 
@@ -231,18 +232,18 @@
 	//TODO: Refactor this ugly code
 	[super layoutSubviews];
 	CGRect finalFrame = self.frame;
-	self.inset = UIEdgeInsetsZero;
+	self.inset = UIEdgeInsetsMake(0, self.sidesInsetValue, 0, self.sidesInsetValue);
 	for (int i = 1; i < self.selectedEmailUI.count; i++) {
 		CGRect frame = ((PPJSelectableLabel *)(self.selectedEmailUI[i-1])).frame;
 		PPJSelectableLabel * lbl  = self.selectedEmailUI[i];
 		if ((frame.origin.x + frame.size.width) + PPJEMAILPICKER_PADDING_X + lbl.frame.size.width > self.frame.size.width) {
-			lbl.frame = CGRectMake(0,
+			lbl.frame = CGRectMake(self.sidesInsetValue,
 									 frame.origin.y + frame.size.height + PPJEMAILPICKER_PADDING_Y,
 									 lbl.frame.size.width,
 									 lbl.frame.size.height);
 		}
 		else {
-			lbl.frame = CGRectMake(frame.origin.x + frame.size.width + PPJEMAILPICKER_PADDING_X,
+			lbl.frame = CGRectMake(MAX(self.sidesInsetValue, frame.origin.x + frame.size.width + PPJEMAILPICKER_PADDING_X),
 									 frame.origin.y,
 									 lbl.frame.size.width,
 									 lbl.frame.size.height);
@@ -251,13 +252,13 @@
 	PPJSelectableLabel * lastElem = (self.selectedEmailUI).lastObject;
 	if (lastElem) {
 		self.inset = UIEdgeInsetsMake(lastElem.frame.origin.y,
-									  lastElem.frame.origin.x + lastElem.frame.size.width,
-									  0.0, 0.0);
+									  MAX(self.sidesInsetValue, lastElem.frame.origin.x + lastElem.frame.size.width),
+									  0.0, self.sidesInsetValue);
 		CGFloat height = lastElem.frame.origin.y + lastElem.frame.size.height + 2;
         height = (height > self.minimumHeightTextField)? height : self.minimumHeightTextField;
         if (height == self.minimumHeightTextField) {
             for (PPJSelectableLabel * lbl in self.selectedEmailUI) {
-                lbl.frame = CGRectMake(lbl.frame.origin.x,
+                lbl.frame = CGRectMake(MAX(self.sidesInsetValue, lbl.frame.origin.x),
                                        (self.minimumHeightTextField - lbl.frame.size.height) / 2,
                                        lbl.frame.size.width,
                                        lbl.frame.size.height);
@@ -376,6 +377,10 @@
 #pragma mark - Add and Delete emails
 - (void) addString:(NSString *)str
 {
+  if (self.maxNumberOfResults > 0 && self.selectedEmailList.count >= self.maxNumberOfResults){
+    return;
+  }
+  
     str = [str sanitizeString];
 	[self.selectedEmailList addObject:str];
 	PPJSelectableLabel * lbl = [[PPJSelectableLabel alloc] init];
@@ -395,6 +400,11 @@
 	if ([self.pickerDelegate respondsToSelector:@selector(picker:haveArrayOfEmails:)]) {
 		[self.pickerDelegate picker:self haveArrayOfEmails:[self.selectedEmailList copy]];
 	}
+  [self layoutIfNeeded];
+  
+  if (self.maxNumberOfResults > 0 && self.selectedEmailList.count >= self.maxNumberOfResults){
+    [self endEditing:YES];
+  }
 }
 
 - (void) removeCurrentSelectedEmail
@@ -432,7 +442,6 @@
 -(void) tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
 	[self addString:self.possibleStringsFiltered[indexPath.row]];
-    [self layoutIfNeeded];
 	[tableView deselectRowAtIndexPath:indexPath animated:YES];
 	self.text = @"";
 	[self filterArray:@""];
@@ -573,8 +582,12 @@
 
 - (BOOL)PPJ_TextField:(UITextField *)textField shouldChangeCharactersInRange:(NSRange)range replacementString:(NSString *)string
 {
+  if (self.maxNumberOfResults > 0 && self.selectedEmailList.count >= self.maxNumberOfResults){
+    return NO;
+  }
+  
 	NSString * newString = [textField.text stringByReplacingCharactersInRange:range withString:string];
-	if ([string isEqualToString:@" "]) {
+  if (self.allowTypedEntries && [string isEqualToString:@" "]) {
 		NSString * add = textField.text;
 		if (add.length > 0) {
 			[self addString:add];
@@ -591,21 +604,29 @@
 
 - (BOOL)PPJ_textFieldShouldReturn:(UITextField *)txtField
 {
-	NSString * add = txtField.text;
-	if (add.length > 0) {
-		[self addString:add];
-		[self closeDropDown];
-		txtField.text = @"";
-	}
-	return NO;
+  NSString * add = txtField.text;
+  if (add.length > 0) {
+    if (self.allowTypedEntries){
+      [self addString:add];
+    }
+    [self closeDropDown];
+    txtField.text = @"";
+  }
+  
+  if (!self.allowTypedEntries){
+    [txtField endEditing:YES];
+  }
+  return NO;
 }
 
 - (BOOL)PPJ_textFieldShouldEndEditing:(UITextField *)txtField
 {
   NSString * add = txtField.text;
-  if ([add isValidEmail]) {
+  if (self.allowTypedEntries && [add isValidEmail]) {
     [self addString:add];
     [self closeDropDown];
+    txtField.text = @"";
+  }else if (!self.allowTypedEntries) {
     txtField.text = @"";
   }
   return YES;
